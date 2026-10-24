@@ -1,0 +1,49 @@
+# Sistem Operasi
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor dan IDE
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Berkas Lingkungan (Kredensial dan Rahasia)
+.env
+.env.backup
+.env.production
+.env.local
+.env.*.local
+!.env.example
+
+# Backend (Laravel)
+backend/vendor/
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/storage/*.key
+backend/storage/framework/cache/data/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+backend/bootstrap/cache/*.php
+backend/database/*.sqlite
+backend/database/*.sqlite-journal
+.phpunit.result.cache
+
+# Frontend (Node / Vue)
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Umum
+*.log
