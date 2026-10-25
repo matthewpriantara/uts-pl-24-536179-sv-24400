@@ -1,0 +1,85 @@
+services:
+  # ==========================================
+  # Service 1: Database (MySQL 8.0)
+  # ==========================================
+  db:
+    image: mysql:8.0.36
+    container_name: uts_kepl_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-kepl_inventaris}
+      MYSQL_USER: ${DB_USERNAME:-kepl_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-kepl_secret_password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secret_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - kepl_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root_secret_password}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ==========================================
+  # Service 2: Backend (FrankenPHP + Laravel)
+  # Bonus +10 Nilai CPMK
+  # ==========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: uts_kepl_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: ${APP_NAME:-GudangPro}
+      APP_ENV: ${APP_ENV:-production}
+      APP_KEY: ${APP_KEY:-base64:BscpOmccr6w7ubvIRgxlBre5Cr3V/lDUmXp1leX2DnM=}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-kepl_inventaris}
+      DB_USERNAME: ${DB_USERNAME:-kepl_user}
+      DB_PASSWORD: ${DB_PASSWORD:-kepl_secret_password}
+      SERVER_NAME: ":8000"
+    ports:
+      - "8000:8000"
+    networks:
+      - kepl_network
+
+  # ==========================================
+  # Service 3: Frontend (Vue.js 3 + Nginx Alpine)
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+    container_name: uts_kepl_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    networks:
+      - kepl_network
+
+# Persistent Named Volume (Data basis data tetap aman saat container down)
+volumes:
+  db_data:
+    name: uts_kepl_db_data
+
+# Internal Bridge Network (Komunikasi via nama service)
+networks:
+  kepl_network:
+    name: uts_kepl_network
+    driver: bridge
