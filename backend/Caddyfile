@@ -1,0 +1,12 @@
+{
+    # Global FrankenPHP options
+    frankenphp
+    order php_server before file_server
+    auto_https off
+}
+
+:8000 {
+    root * /app/public
+    encode zstd gzip
+    php_server
+}
