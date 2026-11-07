@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\ItemController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
+Route::get('/health', [HealthController::class, 'check']);
 Route::post('/login', [AuthController::class, 'login']);
 
 // Protected routes (Sanctum Token Required)
