@@ -1,0 +1,12 @@
+groups:
+  - name: gudangpro
+    rules:
+      # Berbunyi kalau backend tidak bisa ditarik Prometheus selama 1 menit penuh
+      - alert: BackendMati
+        expr: up{job="backend"} == 0
+        for: 1m # tahan 1 menit supaya kedipan jaringan sesaat tidak membangunkan orang
+        labels:
+          severity: kritis
+        annotations:
+          summary: "Backend GudangPro tidak bisa ditarik Prometheus selama lebih dari 1 menit"
+          action: "Jalankan 'docker compose ps' untuk cek status container backend, lalu 'docker compose logs --tail=50 backend' untuk melihat penyebabnya. Jika berhenti, nyalakan dengan 'docker compose start backend'."

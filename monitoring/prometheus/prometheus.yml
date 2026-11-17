@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s # seberapa sering target ditarik
+  evaluation_interval: 15s # seberapa sering aturan alarm dicek
+
+# Aturan alarm dibaca dari file terpisah (ikut di-mount di compose)
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus memantau dirinya sendiri
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # CPU & memori tiap container (cAdvisor)
+  - job_name: 'container'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # Metrik mesin (node-exporter)
+  - job_name: 'server'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Metrik aplikasi GudangPro (endpoint /metrics di Laravel)
+  # Host memakai NAMA SERVICE compose, bukan localhost/IP
+  - job_name: 'backend'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['backend:8000']

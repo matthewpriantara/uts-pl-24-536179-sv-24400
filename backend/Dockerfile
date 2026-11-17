@@ -5,7 +5,8 @@ FROM dunglas/frankenphp:1.4-php8.4-alpine AS runner
 COPY --from=composer:2.8.9 /usr/bin/composer /usr/bin/composer
 
 # Pasang ekstensi PHP yang dibutuhkan untuk MySQL, optimasi, dan Laravel
-RUN install-php-extensions pdo_mysql bcmath pcntl opcache zip intl
+# apcu: menyimpan angka metrik Prometheus antar request (Pertemuan 11)
+RUN install-php-extensions pdo_mysql bcmath pcntl opcache zip intl apcu
 
 WORKDIR /app
 
