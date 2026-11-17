@@ -96,10 +96,74 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ==========================================
+  # MONITORING (Pertemuan 11)
+  # ==========================================
+
+  # Service 4: Prometheus (pengumpul & penyimpan metrik)
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: uts_kepl_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prom_data:/prometheus # supaya riwayat metrik tidak hilang saat container diganti
+    ports:
+      - "127.0.0.1:9090:9090" # hanya bisa dibuka dari laptop sendiri, tidak terbuka ke jaringan
+    networks:
+      - kepl_network
+
+  # Service 5: Grafana (penggambar dashboard)
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: uts_kepl_grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      # Wajib diisi di .env; compose menolak jalan kalau kosong (tidak pernah admin/admin)
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:?Isi GRAFANA_PASS di file .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - kepl_network
+
+  # Service 6: cAdvisor (CPU & memori tiap container)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: uts_kepl_cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - kepl_network
+
+  # Service 7: Node Exporter (metrik mesin/server)
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: uts_kepl_node_exporter
+    restart: unless-stopped
+    networks:
+      - kepl_network
+
 # Persistent Named Volume (Data basis data tetap aman saat container down)
 volumes:
   db_data:
     name: uts_kepl_db_data
+  prom_data:
+    name: uts_kepl_prom_data
+  grafana_data:
+    name: uts_kepl_grafana_data
 
 # Internal Bridge Network (Komunikasi via nama service)
 networks:
