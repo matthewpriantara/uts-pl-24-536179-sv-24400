@@ -14,10 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function () {
             Route::middleware([])->get('/health', [\App\Http\Controllers\HealthController::class, 'check']);
+            Route::middleware([])->get('/metrics', \App\Http\Controllers\MetricsController::class);
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->append(\App\Http\Middleware\CatatMetrik::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

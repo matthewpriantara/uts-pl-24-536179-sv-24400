@@ -1,0 +1,989 @@
+{
+  "info": {
+    "name": "P11 KEPL - Monitoring Prometheus & Grafana",
+    "description": "Pengujian susunan monitoring Pertemuan 11: endpoint /metrics, target Prometheus, aturan alarm, keamanan login Grafana, dan pembangkit lalu lintas untuk dashboard.\n\nSebelum dipakai: isi variabel collection `grafanaPass` dengan password Grafana dari file .env.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Cek Susunan Monitoring",
+      "description": "Jalankan satu per satu untuk memastikan semua komponen hidup. Jalankan folder 2 dulu supaya /metrics sudah berisi data.",
+      "item": [
+        {
+          "name": "1. Backend Health (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/health",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Endpoint /metrics Aplikasi (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Format teks Prometheus\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/plain\");",
+                  "});",
+                  "pm.test(\"Berisi metrik app_http_requests_total\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"app_http_requests_total\");",
+                  "});",
+                  "pm.test(\"Berisi histogram durasi request\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"app_http_request_duration_seconds_bucket\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/plain"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/metrics",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Prometheus - Semua Target UP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const targets = pm.response.json().data.activeTargets;",
+                  "targets.forEach(t => console.log(t.labels.job, '=>', t.health, t.lastError || ''));",
+                  "pm.test(\"Ada 4 target (prometheus, container, server, backend)\", function () {",
+                  "    const jobs = targets.map(t => t.labels.job).sort();",
+                  "    pm.expect(jobs).to.eql([\"backend\", \"container\", \"prometheus\", \"server\"]);",
+                  "});",
+                  "pm.test(\"Semua target berstatus up\", function () {",
+                  "    const down = targets.filter(t => t.health !== \"up\").map(t => t.labels.job + \": \" + t.lastError);",
+                  "    pm.expect(down, down.join(' | ')).to.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{prometheusUrl}}/api/v1/targets?state=active",
+              "host": [
+                "{{prometheusUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "targets"
+              ],
+              "query": [
+                {
+                  "key": "state",
+                  "value": "active"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "4. Prometheus - Query Permintaan per Detik",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json().data.result;",
+                  "res.forEach(r => console.log(r.metric.route, '=>', r.value[1], 'req/s'));",
+                  "pm.test(\"Query mengembalikan data\", function () {",
+                  "    pm.expect(res.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{prometheusUrl}}/api/v1/query?query=sum by (route) (rate(app_http_requests_total[5m]))",
+              "host": [
+                "{{prometheusUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "query"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "sum by (route) (rate(app_http_requests_total[5m]))"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Prometheus - Aturan Alarm Terbaca",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const rules = pm.response.json().data.groups.flatMap(g => g.rules);",
+                  "const r = rules.find(x => x.name === \"BackendMati\");",
+                  "pm.test(\"Aturan BackendMati ada\", function () {",
+                  "    pm.expect(r).to.not.be.undefined;",
+                  "});",
+                  "pm.test(\"Aturan memakai for: (duration > 0) dan anotasi action\", function () {",
+                  "    pm.expect(r.duration).to.be.above(0);",
+                  "    pm.expect(r.annotations.action).to.not.be.empty;",
+                  "});",
+                  "console.log('State BackendMati:', r && r.state);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{prometheusUrl}}/api/v1/rules?type=alert",
+              "host": [
+                "{{prometheusUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "alert"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6. Prometheus - Status Alarm Saat Ini",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const alerts = pm.response.json().data.alerts;",
+                  "alerts.forEach(a => console.log(a.labels.alertname, '=>', a.state));",
+                  "// Normal: kosong. Setelah 'docker compose stop backend': pending lalu firing",
+                  "pm.test(\"Daftar alarm terbaca\", function () {",
+                  "    pm.expect(alerts).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{prometheusUrl}}/api/v1/alerts",
+              "host": [
+                "{{prometheusUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "alerts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "7. Grafana Health (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Database Grafana ok\", function () {",
+                  "    pm.expect(pm.response.json().database).to.eql(\"ok\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{grafanaUrl}}/api/health",
+              "host": [
+                "{{grafanaUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "8. Grafana Login admin-admin DITOLAK (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "// Bukti keamanan: password bawaan admin/admin sudah tidak berlaku"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{grafanaUrl}}/api/user",
+              "host": [
+                "{{grafanaUrl}}"
+              ],
+              "path": [
+                "api",
+                "user"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "admin",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "9. Grafana Login Password Baru (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Login sebagai admin\", function () {",
+                  "    pm.expect(pm.response.json().login).to.eql(\"admin\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{grafanaUrl}}/api/user",
+              "host": [
+                "{{grafanaUrl}}"
+              ],
+              "path": [
+                "api",
+                "user"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{grafanaPass}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "10. Grafana - Data Source Prometheus Terhubung",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Data source status OK\", function () {",
+                  "    pm.expect(pm.response.json().status).to.eql(\"OK\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{grafanaUrl}}/api/datasources/uid/prometheus/health",
+              "host": [
+                "{{grafanaUrl}}"
+              ],
+              "path": [
+                "api",
+                "datasources",
+                "uid",
+                "prometheus",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{grafanaPass}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "11. Grafana - Dashboard GudangPro Ter-provisioning",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const d = pm.response.json().dashboard;",
+                  "pm.test(\"Minimal 4 panel\", function () {",
+                  "    pm.expect(d.panels.length).to.be.at.least(4);",
+                  "});",
+                  "pm.test(\"Semua judul panel berupa pertanyaan\", function () {",
+                  "    d.panels.forEach(p => pm.expect(p.title, p.title).to.match(/\\?$/));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{grafanaUrl}}/api/dashboards/uid/gudangpro-kesehatan",
+              "host": [
+                "{{grafanaUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboards",
+                "uid",
+                "gudangpro-kesehatan"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{grafanaPass}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Pembangkit Lalu Lintas (Runner)",
+      "description": "Jalankan folder ini lewat Collection Runner (mis. 100 iterasi, delay 200 ms) supaya grafik dashboard terisi berbagai status: 200, 201, 401, 404, 422.",
+      "item": [
+        {
+          "name": "1. Login (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.collectionVariables.set(\"authToken\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/login",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@kepl.test\",\n  \"password\": \"password123\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "2. Health (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/health",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "3. Daftar Barang (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/items",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "4. Tambah Barang (201 Created)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set(\"itemId\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/items",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Barang Uji Monitoring {{$randomProductName}}\",\n  \"sku\": \"MON-{{$timestamp}}-{{$randomInt}}\",\n  \"category\": \"Uji Monitoring\",\n  \"stock\": 5,\n  \"price\": 10000,\n  \"description\": \"Dibuat oleh Postman Runner untuk mengisi grafik P11\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Detail Barang (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/items/{{itemId}}",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "items",
+                "{{itemId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6. Hapus Barang (200 OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/items/{{itemId}}",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "items",
+                "{{itemId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "7. Tanpa Token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/items",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "8. Validasi Gagal (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/items",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"sku\": \"\",\n  \"category\": \"\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "9. Route Tidak Ada (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appUrl}}/api/tidak-ada",
+              "host": [
+                "{{appUrl}}"
+              ],
+              "path": [
+                "api",
+                "tidak-ada"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "appUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "prometheusUrl",
+      "value": "http://localhost:9090",
+      "type": "string"
+    },
+    {
+      "key": "grafanaUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "grafanaPass",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "itemId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
